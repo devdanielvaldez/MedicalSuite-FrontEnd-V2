@@ -67,11 +67,11 @@ const InsuranceCard: React.FC<InsuranceCardProps> = ({ insurance, onDeleteActive
                                 </IconButton>
                             </Tooltip>
                         )}
-                        <Tooltip title="Credenciales OFV">
+                        {/* <Tooltip title="Credenciales OFV">
                             <IconButton onClick={() => onCredentials(insurance)} color="info">
                                 <LockIcon fontSize="small" />
                             </IconButton>
-                        </Tooltip>
+                        </Tooltip> */}
                         <Tooltip title="Planes">
                             <IconButton onClick={() => setOpenPlansDialog(true)} color="info">
                                 <ListIcon fontSize="small" />
@@ -84,9 +84,9 @@ const InsuranceCard: React.FC<InsuranceCardProps> = ({ insurance, onDeleteActive
             <Dialog open={openPlansDialog} onClose={() => setOpenPlansDialog(false)} fullWidth maxWidth="md">
                 <DialogTitle>Planes de {insurance.name}</DialogTitle>
                 <DialogContent>
-                    {insurance.plans.length > 0 ? (
+                    {insurance?.plans?.length > 0 ? (
                         <Grid container spacing={2} sx={{ mt: 1 }}>
-                            {insurance.plans.map((plan, index) => (
+                            {insurance?.plans?.map((plan, index) => (
                                 <Grid item xs={12} sm={6} md={4} key={index}>
                                     <Paper
                                         elevation={3}

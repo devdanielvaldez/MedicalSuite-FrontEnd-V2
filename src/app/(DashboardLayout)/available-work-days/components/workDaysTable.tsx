@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import {
     Table,
     TableHead,
@@ -9,120 +9,136 @@ import {
     TableBody,
     Typography,
     Box,
-    TextField,
-    Button,
-    Menu,
-    MenuItem,
     IconButton,
     Dialog,
     DialogTitle,
     DialogContent,
     DialogActions,
+    Button,
 } from '@mui/material';
-import { styled } from '@mui/material/styles';
 import DashboardCard from '../../components/shared/DashboardCard';
-
-import FilterListIcon from '@mui/icons-material/FilterList';
-import DownloadForOfflineIcon from '@mui/icons-material/DownloadForOffline';
-import BorderAllIcon from '@mui/icons-material/BorderAll';
-import PictureAsPdfIcon from '@mui/icons-material/PictureAsPdf';
-import EditIcon from '@mui/icons-material/Edit';
-import DeleteIcon from '@mui/icons-material/Delete';
 import CheckCircleIcon from '@mui/icons-material/CheckCircle';
+import { httpRequest } from '@/app/utils/http';
+import { toast, ToastContainer } from 'react-toastify';
+import { dayNumberToString } from '@/app/utils/utils';
 
 export interface WorkDays {
-    id: string;
-    day: string;
-    isActive: string; // "Si" o "No"
+    uuid: string;
+    embedding: any;
+    userCreatorId: number;
+    userUpdatesId: number;
+    createdAt: string;
+    updatedAt: string;
+    deletedAt: any;
+    availableWorkDaysId: number;
+    availableWorkDaysBranchOfficeId: number;
+    dayOfWeek: string;
+    isActive: boolean;
+    branchOffice: BranchOffice;
+    workHours: WorkHour[];
+}
+
+export interface BranchOffice {
+    uuid: string;
+    embedding: any;
+    userCreatorId: number;
+    userUpdatesId: number;
+    createdAt: string;
+    updatedAt: string;
+    deletedAt: any;
+    branchOfficeId: number;
+    branchOfficeContactId: any;
+    branchOfficeAddressId: any;
+    branchOfficeDoctorId: number;
+    availableWorkDaysBranchOfficeId: any;
+    nameBranchOffice: string;
+    isActive: boolean;
+}
+
+export interface WorkHour {
+    uuid: string;
+    embedding: any;
+    userCreatorId: number;
+    userUpdatesId: number;
+    createdAt: string;
+    updatedAt: string;
+    deletedAt: any;
+    workHoursId: number;
+    availableWorkDaysId: number;
     startTime: string;
     endTime: string;
-    limit: number;
+    patientLimit: number;
+    isActive: boolean;
 }
 
-interface WorkDaysTableProps {
-    workDays: WorkDays[];
-}
-
-const CustomTextField = styled(TextField)(({ theme }) => ({
-    '& .MuiOutlinedInput-root': {
-        borderRadius: '12px',
-        backgroundColor: theme.palette.background.paper,
-        transition: theme.transitions.create(['border-color', 'box-shadow']),
-        '& fieldset': {
-            borderColor: theme.palette.divider,
-        },
-        '&:hover fieldset': {
-            borderColor: theme.palette.primary.main,
-        },
-        '&.Mui-focused fieldset': {
-            borderColor: theme.palette.primary.main,
-            boxShadow: `0 0 0 2px ${theme.palette.primary.light}`,
-        },
-    },
-}));
-
-const WorkDaysTable: React.FC<WorkDaysTableProps> = ({ workDays }) => {
-    // Usamos estado local para almacenar y actualizar los horarios
-    const [data, setData] = useState<WorkDays[]>(workDays);
-
-    // Estados para el diálogo de confirmación
+const WorkDaysTable = () => {
+    const [data, setData] = useState<WorkDays[] | any>([]);
     const [confirmOpen, setConfirmOpen] = useState(false);
     const [confirmAction, setConfirmAction] = useState<'delete' | 'toggle' | null>(null);
-    const [selectedWorkDay, setSelectedWorkDay] = useState<WorkDays | null>(null);
+    const [selectedWorkDay, setSelectedWorkDay] = useState<WorkDays | any>();
 
-    // Función para editar (aquí simplemente se muestra una alerta)
-    const handleEdit = (wd: WorkDays) => {
-        alert(`Editar horario para ${wd.day}`);
-    };
+    const fetchBranchOffices = async () => {
+        try {
+            const res: any = await httpRequest({
+                url: '/available-work-days/' + localStorage.getItem('selectedBranchOffice'),
+                method: 'GET',
+                requiresAuth: true
+            });
 
-    // Para eliminar, se abre el diálogo de confirmación
-    const handleDelete = (wd: WorkDays) => {
-        setSelectedWorkDay(wd);
-        setConfirmAction('delete');
-        setConfirmOpen(true);
-    };
+            console.log(res.data);
+            setData(res.data);
+        } catch (err) {
+            console.log(err);
+        }
+    }
 
-    // Para activar/desactivar, se abre el diálogo de confirmación
+    useEffect(() => {
+        fetchBranchOffices();
+    }, [])
+
     const handleToggleActive = (wd: WorkDays) => {
         setSelectedWorkDay(wd);
         setConfirmAction('toggle');
         setConfirmOpen(true);
     };
 
-    // Cerrar diálogo de confirmación
     const handleConfirmClose = () => {
         setConfirmOpen(false);
         setSelectedWorkDay(null);
         setConfirmAction(null);
     };
 
-    // Ejecuta la acción confirmada (eliminar o cambiar estado)
     const handleConfirmAction = () => {
-        if (selectedWorkDay && confirmAction) {
-            if (confirmAction === 'delete') {
-                setData(data.filter((item) => item.id !== selectedWorkDay.id));
-            } else if (confirmAction === 'toggle') {
-                setData(
-                    data.map((item) => {
-                        if (item.id === selectedWorkDay.id) {
-                            return {
-                                ...item,
-                                isActive: item.isActive === 'Si' ? 'No' : 'Si',
-                            };
-                        }
-                        return item;
-                    })
-                );
-            }
-        }
-        handleConfirmClose();
+        httpRequest({
+            url: '/available-work-days/' + selectedWorkDay.availableWorkDaysId,
+            method: 'DELETE',
+            requiresAuth: true
+        })
+            .then((data: any) => {
+                toast.success(data.message);
+                fetchBranchOffices();
+                handleConfirmClose();
+            })
+            .catch((err) => {
+                toast.error(err.data.message);
+            })
+    };
+
+    const convertTo12Hour = (time: string): string => {
+        const [hoursStr, minutes] = time.split(':');
+        let hours = parseInt(hoursStr, 10);
+        const ampm = hours >= 12 ? 'PM' : 'AM';
+        hours = hours % 12;
+        if (hours === 0) hours = 12;
+        return `${hours}:${minutes} ${ampm}`;
     };
 
     return (
         <DashboardCard title="Horarios Laborales" subtitle="Gestione sus horarios laborales y filtre">
             <>
+                <ToastContainer />
                 <Box sx={{ p: 2 }}>
-                    <Box sx={{ overflow: 'auto', width: { xs: '280px', sm: 'auto' } }}>
+                    <Box sx={{ overflowX: 'auto', width: '100%' }}>
                         <Table aria-label="tabla de horarios laborales" sx={{ whiteSpace: 'nowrap', mt: 2 }}>
                             <TableHead>
                                 <TableRow>
@@ -136,45 +152,50 @@ const WorkDaysTable: React.FC<WorkDaysTableProps> = ({ workDays }) => {
                                             Activo
                                         </Typography>
                                     </TableCell>
-                                    <TableCell>
+                                    <TableCell sx={{ minWidth: 300 }}>
                                         <Typography variant="subtitle2" fontWeight={600}>
-                                            Hora Inicio
+                                            Horarios Laborables
                                         </Typography>
                                     </TableCell>
                                     <TableCell>
                                         <Typography variant="subtitle2" fontWeight={600}>
-                                            Hora Final
-                                        </Typography>
-                                    </TableCell>
-                                    <TableCell>
-                                        <Typography variant="subtitle2" fontWeight={600}>
-                                            Límite de Pacientes
-                                        </Typography>
-                                    </TableCell>
-                                    <TableCell>
-                                        <Typography variant="subtitle2" fontWeight={600}>
-                                            Acciones
+
                                         </Typography>
                                     </TableCell>
                                 </TableRow>
                             </TableHead>
                             <TableBody>
-                                {data.map((wd) => (
-                                    <TableRow key={wd.id}>
-                                        <TableCell>{wd.day}</TableCell>
-                                        <TableCell>{wd.isActive}</TableCell>
-                                        <TableCell>{wd.startTime}</TableCell>
-                                        <TableCell>{wd.endTime}</TableCell>
-                                        <TableCell>{wd.limit}</TableCell>
+                                {data.map((wd: any) => (
+                                    <TableRow key={wd.availableWorkDaysId}>
+                                        <TableCell>{ dayNumberToString(wd.dayOfWeek) }</TableCell>
+                                        <TableCell>{wd.isActive ? "Sí" : "No"}</TableCell>
                                         <TableCell>
-                                            <IconButton color="primary" onClick={() => handleEdit(wd)}>
-                                                <EditIcon />
-                                            </IconButton>
-                                            <IconButton color="error" onClick={() => handleDelete(wd)}>
-                                                <DeleteIcon />
-                                            </IconButton>
+                                            <Box display="flex" flexDirection="column" gap={1}>
+                                                {wd.workHours.map((wh: any, index: any) => (
+                                                    <Box
+                                                        key={wh.workHoursId || index}
+                                                        sx={{
+                                                            backgroundColor: 'grey.100',
+                                                            borderRadius: 1,
+                                                            p: 1,
+                                                            boxShadow: 1,
+                                                            display: 'flex',
+                                                            justifyContent: 'space-between',
+                                                        }}
+                                                    >
+                                                        <Typography variant="body2">
+                                                            {convertTo12Hour(wh.startTime)} - {convertTo12Hour(wh.endTime)}
+                                                        </Typography>
+                                                        <Typography variant="caption">
+                                                            Límite: {wh.patientLimit}
+                                                        </Typography>
+                                                    </Box>
+                                                ))}
+                                            </Box>
+                                        </TableCell>
+                                        <TableCell>
                                             <IconButton onClick={() => handleToggleActive(wd)}>
-                                                <CheckCircleIcon color={wd.isActive === 'Si' ? 'success' : 'disabled'} />
+                                                <CheckCircleIcon color={wd.isActive ? 'success' : 'disabled'} />
                                             </IconButton>
                                         </TableCell>
                                     </TableRow>

@@ -57,7 +57,10 @@ const AuthLogin = ({ title, subtitle, subtext }: LoginType) => {
         console.log(res);
         localStorage.setItem('accessTokenMedicalSuite', res.tokens.accessToken);
         localStorage.setItem('refreshTokenMedicalSuite', res.tokens.refreshToken);
-        router.push('/');  
+        localStorage.setItem('personId', res.user.userPersonId);
+        if(res.user.isDoctor) localStorage.setItem('doctorId', res.user.userDoctorId);
+        localStorage.setItem("userId", res.user.userId);
+        router.push('/');
       })
       .catch((err) => {
         // console.log(err);

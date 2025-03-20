@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import {
   Box,
   Fab,
@@ -13,95 +13,102 @@ import {
 } from '@mui/material';
 import AddIcon from '@mui/icons-material/Add';
 import PageContainer from '@/app/(DashboardLayout)/components/container/PageContainer';
-import BranchOfficesTable from './components/branchOfficeTable';
-import RegisterBranchOfficeDialog from './components/branchOfficeRegister';
-
-export interface BranchOffice {
-  id: string;
-  nameBranchOffice: string;
-  branchOfficeDoctorId: number;
-  phoneNumber: string;
-}
-
-const initialBranchOffices: any = [
-  {
-    "uuid": "a498db8d-1326-4ad8-b6cf-e0ff869a70d5",
-    "embedding": null,
-    "userCreatorId": 2,
-    "userUpdatesId": null,
-    "createdAt": "2025-02-17T18:19:05.740Z",
-    "updatedAt": "2025-02-17T18:19:05.740Z",
-    "deletedAt": null,
-    "branchOfficeId": 1,
-    "branchOfficeContactId": null,
-    "branchOfficeAddressId": null,
-    "branchOfficeDoctorId": null,
-    "availableWorkDaysBranchOfficeId": null,
-    "nameBranchOffice": "system"
-  },
-  {
-    "uuid": "c2ecba7e-746b-4d12-8d5a-2ecd7dd464a3",
-    "embedding": null,
-    "userCreatorId": 3,
-    "userUpdatesId": 3,
-    "createdAt": "2025-02-17T21:42:02.684Z",
-    "updatedAt": "2025-02-17T21:42:02.684Z",
-    "deletedAt": null,
-    "branchOfficeId": 2,
-    "branchOfficeContactId": null,
-    "branchOfficeAddressId": null,
-    "branchOfficeDoctorId": 1,
-    "availableWorkDaysBranchOfficeId": null,
-    "nameBranchOffice": "Siglo 21"
-  }
-]
-
-interface RegisterBranchOfficeDialogProps {
-  open: boolean;
-  onClose: () => void;
-  onSave: (newBranch: BranchOffice) => void;
-}
+import BranchOfficesTable, { BranchOffice } from './components/branchOfficeTable';
+import RegisterBranchOfficeDialog, { BranchOfficeEditData } from './components/branchOfficeRegister';
+import { httpRequest } from '@/app/utils/http';
 
 const BranchOfficesList: React.FC = () => {
-  const [branchOffices, setBranchOffices] = useState<BranchOffice[]>(initialBranchOffices);
+  const [branchOffices, setBranchOffices] = useState<BranchOffice[]>([]);
+  const [loading, setLoading] = useState<boolean>(false);
   const [openDialog, setOpenDialog] = useState(false);
-  const [selectedBranch, setSelectedBranch] = useState<BranchOffice | null>(null);
+  const [selectedBranchEdit, setSelectedBranchEdit] = useState<BranchOfficeEditData | null>(null);
   const [detailOpen, setDetailOpen] = useState(false);
+  const [selectedBranchDetails, setSelectedBranchDetails] = useState<BranchOffice | null>(null);
 
-  const handleOpenDialog = () => setOpenDialog(true);
-  const handleCloseDialog = () => setOpenDialog(false);
-
-  const handleSaveBranch = (newBranch: BranchOffice) => {
-    setBranchOffices([...branchOffices, newBranch]);
+  const fetchBranchOffices = async () => {
+    setLoading(true);
+    try {
+      const response: any = await httpRequest({
+        method: 'GET',
+        url: '/branch-office/get-all-by-doctor',
+        requiresAuth: true,
+      });
+      setBranchOffices(response);
+    } catch (error) {
+      console.error("Error fetching branch offices:", error);
+    } finally {
+      setLoading(false);
+    }
   };
 
-  const handleViewDetails = (branch: BranchOffice) => {
-    setSelectedBranch(branch);
+  useEffect(() => {
+    fetchBranchOffices();
+  }, []);
+
+  // Transformar el branch office a BranchOfficeEditData para el formulario de edición
+  const handleEdit = (bo: BranchOffice) => {
+    const editData: BranchOfficeEditData = {
+      branchOfficeId: bo.branchOfficeId,
+      uuid: bo.uuid,
+      nameBranchOffice: bo.nameBranchOffice,
+      createOrUpdateContactDto: {
+        // Si la data no incluye contactos, se usan valores por defecto
+        uuid: "",
+        phoneNumbers: bo.phoneNumber ? [{ phoneNumber: bo.phoneNumber, typePhone: 'cellphone', label: 'TEL_OFFICE', country: 'DO' }] : [{ phoneNumber: '', typePhone: 'cellphone', label: 'TEL_OFFICE', country: 'DO' }],
+        socialNetworks: []
+      }
+    };
+    setSelectedBranchEdit(editData);
+    setOpenDialog(true);
+  };
+
+  const handleShowDetails = (bo: BranchOffice) => {
+    setSelectedBranchDetails(bo);
     setDetailOpen(true);
   };
 
-  const handleCloseDetails = () => setDetailOpen(false);
+  const handleCloseDetails = () => {
+    setDetailOpen(false);
+    setSelectedBranchDetails(null);
+  };
+
+  const handleCloseDialog = () => {
+    setOpenDialog(false);
+    setSelectedBranchEdit(null);
+  };
+
+  // Función onSave para refrescar la lista tras guardar (registro o edición)
+  const handleSaveBranch = (newBranch: any) => {
+    fetchBranchOffices();
+  };
 
   return (
     <PageContainer title="Consultorios" description="Gestión de consultorios">
       <Box sx={{ position: 'relative' }}>
-            <BranchOfficesTable branchOffices={initialBranchOffices}></BranchOfficesTable>
+        <BranchOfficesTable
+          branchOffices={branchOffices}
+          loading={loading}
+          onEdit={handleEdit}
+          onShowDetails={handleShowDetails}
+        />
 
-        <RegisterBranchOfficeDialog open={openDialog} onClose={handleCloseDialog} />
+        <RegisterBranchOfficeDialog
+          open={openDialog}
+          onClose={handleCloseDialog}
+          onSave={handleSaveBranch}
+          editData={selectedBranchEdit || undefined}
+        />
 
         <Dialog open={detailOpen} onClose={handleCloseDetails} fullWidth maxWidth="sm">
           <DialogTitle>Detalles del Consultorio</DialogTitle>
           <DialogContent dividers>
-            {selectedBranch && (
+            {selectedBranchDetails && (
               <Box>
                 <Typography variant="subtitle1">
-                  <strong>Nombre:</strong> {selectedBranch.nameBranchOffice}
+                  <strong>Nombre:</strong> {selectedBranchDetails.nameBranchOffice}
                 </Typography>
                 <Typography variant="subtitle1">
-                  <strong>ID del Doctor:</strong> {selectedBranch.branchOfficeDoctorId}
-                </Typography>
-                <Typography variant="subtitle1">
-                  <strong>Teléfono:</strong> {selectedBranch.phoneNumber}
+                  <strong>Teléfono:</strong> {selectedBranchDetails.phoneNumber || 'N/A'}
                 </Typography>
               </Box>
             )}
@@ -112,7 +119,7 @@ const BranchOfficesList: React.FC = () => {
         </Dialog>
 
         <Box sx={{ position: 'fixed', bottom: 16, right: 16 }}>
-          <Fab color="primary" onClick={handleOpenDialog}>
+          <Fab color="primary" onClick={() => { setOpenDialog(true); setSelectedBranchEdit(null); }}>
             <AddIcon />
           </Fab>
         </Box>

@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState } from 'react';
+import React, { useRef, useState } from 'react';
 import {
   Box,
   Tooltip,
@@ -9,39 +9,24 @@ import {
 } from '@mui/material';
 import AddIcon from '@mui/icons-material/Add';
 import PageContainer from '@/app/(DashboardLayout)/components/container/PageContainer';
-import PatientsTable, { Patient } from './components/patientsTable';
+import PatientsTable, { PatientsTableMethods } from './components/patientsTable';
 import RegisterPatientDialog from './components/registerPatients';
 
-const patientsData: Patient[] = [
-  { id: "1", name: "Juan Pérez", age: 30, phone: "+1 (555) 123-4567", cedula: "402-1164260-4" },
-  { id: "2", name: "Ana Gómez", age: 25, phone: "+1 (555) 987-6543", cedula: "402-1164260-4" },
-  { id: "3", name: "Carlos López", age: 40, phone: "+1 (555) 555-1212", cedula: "402-1164260-4" },
-];
 
 const PatientsList: React.FC = () => {
-  const [filterOpen, setFilterOpen] = useState(false);
-  const [exportAnchorEl, setExportAnchorEl] = useState<null | HTMLElement>(null);
   const [openRegisterDialog, setOpenRegisterDialog] = useState(false);
 
-  const handleToggleFilter = () => {
-    setFilterOpen((prev) => !prev);
-  };
-
-  const handleExportClick = (event: React.MouseEvent<HTMLButtonElement>) => {
-    setExportAnchorEl(event.currentTarget);
-  };
-
-  const handleCloseExport = () => {
-    setExportAnchorEl(null);
-  };
+  const patientsTableRef = useRef<PatientsTableMethods>(null);
 
   const handleRegister = () => {
-    // Abrir el dialog para registrar un nuevo paciente.
     setOpenRegisterDialog(true);
   };
 
   const handleCloseRegisterDialog = () => {
     setOpenRegisterDialog(false);
+    if (patientsTableRef.current) {
+      patientsTableRef.current.refreshData();
+    }
   };
 
   return (
@@ -49,7 +34,7 @@ const PatientsList: React.FC = () => {
       <Box sx={{ position: 'relative' }}>
         <Grid container spacing={3}>
           <Grid item xs={12}>
-            <PatientsTable patients={patientsData} />
+            <PatientsTable ref={patientsTableRef} />
           </Grid>
         </Grid>
       </Box>

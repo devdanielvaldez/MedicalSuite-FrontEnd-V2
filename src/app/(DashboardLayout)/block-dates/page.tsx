@@ -195,7 +195,7 @@ const BlockDatesScreen: React.FC = () => {
       <Box sx={{ position: 'relative', p: 2 }}>
         <Grid container spacing={3}>
           <Grid item xs={12}>
-            <BlockedDatesTable blockedDates={blockedDates} onEdit={handleEdit} onDelete={handleDelete} />
+            <BlockedDatesTable/>
           </Grid>
         </Grid>
         <BlockDateDialog

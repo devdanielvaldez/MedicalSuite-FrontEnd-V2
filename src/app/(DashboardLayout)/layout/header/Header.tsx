@@ -1,21 +1,30 @@
-import React from 'react';
-import { Box, AppBar, Toolbar, styled, Stack, IconButton, Badge, Button } from '@mui/material';
+'use client';
+
+import React, { useEffect, useState } from 'react';
+import {
+  Box,
+  AppBar,
+  Toolbar,
+  styled,
+  Stack,
+  IconButton,
+  Badge,
+  FormControl,
+  InputLabel,
+  Select,
+  MenuItem,
+} from '@mui/material';
 import PropTypes from 'prop-types';
-import Link from 'next/link';
-// components
+
 import Profile from './Profile';
 import { IconBellRinging, IconMenu } from '@tabler/icons-react';
+import { httpRequest } from '@/app/utils/http';
 
 interface ItemType {
-  toggleMobileSidebar:  (event: React.MouseEvent<HTMLElement>) => void;
+  toggleMobileSidebar: (event: React.MouseEvent<HTMLElement>) => void;
 }
 
-const Header = ({toggleMobileSidebar}: ItemType) => {
-
-  // const lgUp = useMediaQuery((theme) => theme.breakpoints.up('lg'));
-  // const lgDown = useMediaQuery((theme) => theme.breakpoints.down('lg'));
-
-
+const Header = ({ toggleMobileSidebar }: ItemType) => {
   const AppBarStyled = styled(AppBar)(({ theme }) => ({
     boxShadow: 'none',
     background: theme.palette.background.paper,
@@ -25,10 +34,45 @@ const Header = ({toggleMobileSidebar}: ItemType) => {
       minHeight: '70px',
     },
   }));
+
   const ToolbarStyled = styled(Toolbar)(({ theme }) => ({
     width: '100%',
     color: theme.palette.text.secondary,
   }));
+
+  const [branchOffices, setBranchOffices] = useState<any[]>([]);
+  const [selectedBranchOffice, setSelectedBranchOffice] = useState<string>('');
+
+  useEffect(() => {
+    async function fetchBranchOffices() {
+      try {
+        const response: any = await httpRequest({
+          method: 'GET',
+          url: '/branch-office/get-all-by-doctor',
+          requiresAuth: true,
+        });
+        const activeOffices = response;
+        setBranchOffices(activeOffices);
+        const storedValue = localStorage.getItem("selectedBranchOffice");
+        if (storedValue && activeOffices.some((bo: any) => bo.branchOfficeId.toString() === storedValue)) {
+          setSelectedBranchOffice(storedValue);
+        } else if (activeOffices.length > 0) {
+          setSelectedBranchOffice(activeOffices[0].branchOfficeId.toString());
+          localStorage.setItem("selectedBranchOffice", activeOffices[0].branchOfficeId.toString());
+        }
+      } catch (error) {
+        console.error("Error fetching branch offices:", error);
+      }
+    }
+    fetchBranchOffices();
+  }, []);
+
+  const handleBranchChange = (e: any) => {
+    const newValue = e.target.value as string;
+    setSelectedBranchOffice(newValue);
+    localStorage.setItem("selectedBranchOffice", newValue);
+    location.reload();
+  };
 
   return (
     <AppBarStyled position="sticky" color="default">
@@ -47,7 +91,6 @@ const Header = ({toggleMobileSidebar}: ItemType) => {
           <IconMenu width="20" height="20" />
         </IconButton>
 
-
         <IconButton
           size="large"
           aria-label="show 11 new notifications"
@@ -58,13 +101,25 @@ const Header = ({toggleMobileSidebar}: ItemType) => {
           <Badge variant="dot" color="primary">
             <IconBellRinging size="21" stroke="1.5" />
           </Badge>
-
         </IconButton>
         <Box flexGrow={1} />
         <Stack spacing={1} direction="row" alignItems="center">
-          <Button variant="contained" component={Link} href="/authentication/login"   disableElevation color="primary" >
-            Login
-          </Button>
+          <FormControl variant="outlined" size="small" sx={{ minWidth: 250 }}>
+            <InputLabel id="branch-office-select-label">Consultorio</InputLabel>
+            <Select
+              labelId="branch-office-select-label"
+              value={selectedBranchOffice}
+              onChange={handleBranchChange}
+              label="Consultorio"
+              fullWidth
+            >
+              {branchOffices.map((bo) => (
+                <MenuItem key={bo.branchOfficeId} value={bo.branchOfficeId.toString()}>
+                  {bo.nameBranchOffice}
+                </MenuItem>
+              ))}
+            </Select>
+          </FormControl>
           <Profile />
         </Stack>
       </ToolbarStyled>

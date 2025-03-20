@@ -20,7 +20,8 @@ import {
   IconArrowDown,
   IconBuilding,
   IconUsersGroup,
-  IconSettings
+  IconSettings,
+  IconTemplate
 } from "@tabler/icons-react";
 
 import { uniqueId } from "lodash";
@@ -132,6 +133,12 @@ const Menuitems = [
   {
     navlabel: true,
     subheader: "Configuración",
+  },
+  {
+    id: uniqueId(),
+    title: "Plantillas",
+    icon: IconTemplate,
+    href: "/templates",
   },
   {
     id: uniqueId(),

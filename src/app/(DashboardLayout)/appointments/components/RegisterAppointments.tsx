@@ -74,12 +74,23 @@ interface TimeSlot {
   appointments: number;
   patientLimit: number;
   formattedTime?: string;
+  workHoursId: number;
+}
+
+interface Insurance {
+  insuranceId: number;
+  insuranceName: string;
+  planId?: number;
+  planName?: string;
+  policyNumber?: string;
 }
 
 interface Patient {
   id: string;
+  personId: number;
   name: string;
   cedula: string;
+  insurance: Insurance | null;
 }
 
 // Convierte día de JavaScript (0-6) a sistema (1-7)
@@ -121,7 +132,6 @@ const extractTimeFromString = (
     console.error("Error al extraer tiempo de:", timeString, error);
   }
 
-  console.log(`Extrayendo ${timeString} -> Horas: ${hours}, Minutos: ${minutes}, Segundos: ${seconds}`);
   return { hours, minutes, seconds };
 };
 
@@ -195,12 +205,32 @@ const RegisterAppointmentModal = ({
         requiresAuth: true,
       });
 
-      // Transformar datos al formato que necesitamos
-      const transformedPatients: Patient[] = res.map((patient: any) => ({
-        id: patient.patientId,
-        name: `${patient.person.firstName} ${patient.person.lastName}`,
-        cedula: patient.person.identityCard,
-      }));
+      const transformedPatients: Patient[] = res.map((patient: any) => {
+        // Verificar si el paciente tiene seguros
+        const hasInsurance = patient.person.insurancePerson && 
+                            patient.person.insurancePerson.length > 0;
+        
+        // Extraer información del primer seguro si existe
+        let insuranceInfo = null;
+        if (hasInsurance) {
+          const insurance = patient.person.insurancePerson[0];
+          insuranceInfo = {
+            insuranceId: insurance.insuranceId,
+            insuranceName: insurance.insurance.insuranceName,
+            planId: insurance.planId,
+            planName: insurance.insurancePlan?.insurancePlanName,
+            policyNumber: insurance.policyNumber
+          };
+        }
+        
+        return {
+          id: patient.patientId,
+          personId: patient.person.personId,
+          name: `${patient.person.firstName} ${patient.person.lastName}`,
+          cedula: patient.person.identityCard,
+          insurance: insuranceInfo
+        };
+      });
 
       setPatients(transformedPatients);
     } catch (err) {
@@ -220,7 +250,6 @@ const RegisterAppointmentModal = ({
       });
 
       setWorkDays(res.data || []);
-      // console.log("Días laborables:", res.data);
     } catch (err) {
       console.error("Error al cargar días laborables:", err);
       throw err;
@@ -244,11 +273,6 @@ const RegisterAppointmentModal = ({
   
       blockData.forEach((block: BlockDate, index: number) => {
         const blockDate = new Date(block.dateBlock);
-        // console.log(
-        //   `[${index}] Bloqueo: ${formatDateWithoutTime(blockDate)}, Todo el día: ${
-        //     block.blockAllDay
-        //   }, Hora inicio: ${block.startTime}, Hora fin: ${block.endTime}`
-        // );
       });
     } catch (err) {
       console.error("Error al cargar días bloqueados:", err);
@@ -261,7 +285,7 @@ const RegisterAppointmentModal = ({
     try {
       const branchOfficeId = localStorage.getItem("selectedBranchOffice");
       const res: any = await httpRequest({
-        url: "/appointments/by-branch/" + branchOfficeId,
+        url: "/appointment/by-branch-office/" + branchOfficeId,
         method: "GET",
         requiresAuth: true,
       });
@@ -478,6 +502,7 @@ const RegisterAppointmentModal = ({
             appointments: appointmentsInSlot,
             patientLimit: wh.patientLimit,
             formattedTime,
+            workHoursId: wh.workHoursId
           });
         }
   
@@ -492,8 +517,6 @@ const RegisterAppointmentModal = ({
     console.log(`Se generaron ${allSlots.length} slots para ${format(date, "yyyy-MM-dd")}`);
     return allSlots;
   };
-
-// ... (Resto del código permanece igual)
 
   useEffect(() => {
     if (selectedDate && !loadingData) {
@@ -510,10 +533,6 @@ const RegisterAppointmentModal = ({
     const isPast = isBefore(day, today);
     const isBlocked = isDayBlocked(day);
     const isWorkingDay = isWorkDay(day);
-  
-    // console.log(
-    //   `Día: ${format(day, "yyyy-MM-dd")}, Pasado: ${isPast}, Bloqueado: ${isBlocked}, Laborable: ${isWorkingDay}`
-    // );
   
     return (
       <PickersDay
@@ -555,22 +574,20 @@ const RegisterAppointmentModal = ({
       // Formatear la fecha para el backend
       const formattedDate = format(selectedDate, "yyyy-MM-dd");
 
-
       const appointmentData = {
         "statusAppointment": "PE",
-        "appointmentPersonId": +selectedPatient.id,
+        "appointmentPersonId": +selectedPatient.personId,
         "date": formattedDate,
-        "isWithInsurance": true,
+        "isWithInsurance": !!selectedPatient.insurance, // Automáticamente true si tiene seguro, false si no
         "isDoctorToVisit": false,
         "patientMotive": appointmentReason,
-        "time": selectedTimeSlot.startTime
+        "time": selectedTimeSlot.startTime,
+        "appointmentWorkHoursId": selectedTimeSlot.workHoursId
       }
-
-      console.log(selectedPatient)
 
       // Enviar la cita al backend
       await httpRequest({
-        url: "/appointment",
+        url: "/appointment/" + localStorage.getItem('selectedBranchOffice'),
         method: "POST",
         data: appointmentData,
         requiresAuth: true,
@@ -658,7 +675,7 @@ const RegisterAppointmentModal = ({
                   <Autocomplete
                     options={patients}
                     getOptionLabel={(option) =>
-                      `${option.name} (${option.cedula})`
+                      `${option.name} (${option.cedula || 'Sin cédula'})`
                     }
                     value={selectedPatient}
                     onChange={(_, newValue) => setSelectedPatient(newValue)}
@@ -673,6 +690,36 @@ const RegisterAppointmentModal = ({
                       />
                     )}
                   />
+
+                  {/* Mostrar información del seguro si existe */}
+                  {selectedPatient && selectedPatient.insurance && (
+                    <Paper
+                      elevation={0}
+                      sx={{
+                        p: 2,
+                        bgcolor: "#f5f5f5",
+                        borderRadius: 2,
+                        mb: 2,
+                      }}
+                    >
+                      <Typography variant="subtitle2" fontWeight={600} color="primary">
+                        Información de Seguro
+                      </Typography>
+                      <Typography variant="body2">
+                        <strong>Seguro:</strong> {selectedPatient.insurance.insuranceName}
+                      </Typography>
+                      {selectedPatient.insurance.planName && (
+                        <Typography variant="body2">
+                          <strong>Plan:</strong> {selectedPatient.insurance.planName}
+                        </Typography>
+                      )}
+                      {selectedPatient.insurance.policyNumber && (
+                        <Typography variant="body2">
+                          <strong>No. Póliza:</strong> {selectedPatient.insurance.policyNumber}
+                        </Typography>
+                      )}
+                    </Paper>
+                  )}
 
                   <TextField
                     label="Motivo de la cita"
@@ -830,42 +877,42 @@ const RegisterAppointmentModal = ({
                         <Box sx={{ display: "flex", flexWrap: "wrap", gap: 1 }}>
                           {timeSlots.map((slot, index) => (
                             <Button
-                              key={index}
-                              variant={
-                                selectedTimeSlot === slot
-                                  ? "contained"
-                                  : "outlined"
-                              }
-                              color={slot.available ? "primary" : "error"}
-                              disabled={!slot.available}
-                              onClick={() => setSelectedTimeSlot(slot)}
-                              size="small"
-                              sx={{
-                                borderRadius: 4,
-                                fontSize: "0.75rem",
-                                px: 1,
-                                py: 0.5,
-                              }}
-                            >
-                              {slot.formattedTime}
-                            </Button>
-                          ))}
-                        </Box>
-                      ) : (
-                        <Typography variant="body2" color="text.secondary">
-                          No hay horarios disponibles para este día.
-                        </Typography>
-                      )}
-                    </Box>
-                  )}
-                </Box>
-              </Grid>
+                            key={index}
+                            variant={
+                              selectedTimeSlot === slot
+                                ? "contained"
+                                : "outlined"
+                            }
+                            color={slot.available ? "primary" : "error"}
+                            disabled={!slot.available}
+                            onClick={() => setSelectedTimeSlot(slot)}
+                            size="small"
+                            sx={{
+                              borderRadius: 4,
+                              fontSize: "0.75rem",
+                              px: 1,
+                              py: 0.5,
+                            }}
+                          >
+                            {slot.formattedTime}
+                          </Button>
+                        ))}
+                      </Box>
+                    ) : (
+                      <Typography variant="body2" color="text.secondary">
+                        No hay horarios disponibles para este día.
+                      </Typography>
+                    )}
+                  </Box>
+                )}
+              </Box>
             </Grid>
-          </Box>
-        )}
-      </DialogContent>
-    </Dialog>
-  );
+          </Grid>
+        </Box>
+      )}
+    </DialogContent>
+  </Dialog>
+);
 };
 
 export default RegisterAppointmentModal;

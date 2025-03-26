@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import {
   Box,
   Button,
@@ -33,6 +33,18 @@ import { municipios } from "@/app/data/municipios";
 import { httpRequest } from "@/app/utils/http";
 import { toast, ToastContainer } from "react-toastify";
 
+interface Insurance {
+  insuranceId: number;
+  insuranceName: string;
+  insurancePlan: InsurancePlan[];
+}
+
+interface InsurancePlan {
+  insurancePlanId: number;
+  insurancePlanName: string;
+  insurancePlanDescription: string;
+}
+
 interface RegisterPatientDialogProps {
   open: boolean;
   onClose: () => void;
@@ -45,7 +57,11 @@ const RegisterPatientDialog: React.FC<RegisterPatientDialogProps> = ({
   const [activeStep, setActiveStep] = useState(0);
   const [isLoading, setIsLoading] = useState(false);
   const [isSearchingCedula, setIsSearchingCedula] = useState(false);
-  const [isSearchingTutorCedula, setIsSearchingTutorCedula] = useState(false); // Nuevo estado para búsqueda de tutor
+  const [isSearchingTutorCedula, setIsSearchingTutorCedula] = useState(false);
+  const [insurances, setInsurances] = useState<Insurance[]>([]);
+  const [loadingInsurances, setLoadingInsurances] = useState(false);
+  const [availablePlans, setAvailablePlans] = useState<InsurancePlan[]>([]);
+  
   const [formData, setFormData] = useState({
     isAdult: null as boolean | null,
     firstName: "",
@@ -70,6 +86,54 @@ const RegisterPatientDialog: React.FC<RegisterPatientDialogProps> = ({
     policyNumber: "",
     noInsurance: false,
   });
+
+  // Cargar los seguros cuando el componente se monta o cuando se llega a la pantalla de seguros
+  useEffect(() => {
+    // Solo cargar seguros si estamos en el paso de seguros y aún no se han cargado
+    if ((activeStep === 4 && formData.isAdult === true) || 
+        (activeStep === 5 && formData.isAdult === false)) {
+      if (insurances.length === 0 && !loadingInsurances) {
+        loadInsurances();
+      }
+    }
+  }, [activeStep, formData.isAdult]);
+
+  // Actualizar planes disponibles cuando cambie el seguro seleccionado
+  useEffect(() => {
+    if (formData.ars) {
+      const selectedInsurance = insurances.find(
+        (ins) => ins.insuranceId.toString() === formData.ars
+      );
+      if (selectedInsurance) {
+        setAvailablePlans(selectedInsurance.insurancePlan);
+        // Resetear el plan seleccionado cuando cambia el seguro
+        setFormData(prev => ({ ...prev, plan: "" }));
+      }
+    } else {
+      setAvailablePlans([]);
+    }
+  }, [formData.ars, insurances]);
+
+  // Cargar seguros desde la API
+  const loadInsurances = async () => {
+    setLoadingInsurances(true);
+    try {
+      const response = await httpRequest({
+        method: "GET",
+        url: "/insurance/insurances",
+        requiresAuth: true,
+      });
+      
+      if (response && Array.isArray(response)) {
+        setInsurances(response);
+      }
+    } catch (error) {
+      console.error("Error al cargar seguros:", error);
+      toast.error("No se pudieron cargar los seguros");
+    } finally {
+      setLoadingInsurances(false);
+    }
+  };
 
   // Define los pasos dinámicamente según si es mayor o menor de edad
   const steps = [
@@ -187,6 +251,16 @@ const RegisterPatientDialog: React.FC<RegisterPatientDialogProps> = ({
     console.log("Paciente registrado", formData);
     setIsLoading(true);
 
+    // Preparar datos del seguro (solo si no marcó "No es asegurado")
+    let insurancesData = [];
+    if (!formData.noInsurance && formData.ars) {
+      insurancesData.push({
+        insuranceId: parseInt(formData.ars),  // ID del seguro seleccionado
+        planId: formData.plan ? parseInt(formData.plan) : undefined,  // ID del plan seleccionado
+        policyNumber: formData.policyNumber || undefined
+      });
+    }
+
     if (formData.isAdult == false) {
       httpRequest({
         method: "PATCH",
@@ -234,6 +308,7 @@ const RegisterPatientDialog: React.FC<RegisterPatientDialogProps> = ({
                   apartment: formData.direccion,
                   country: "DO",
                 },
+                insurances: insurancesData, // Añadir datos de seguros
               },
               patientBranchOfficeId: localStorage.getItem(
                 "selectedBranchOffice"
@@ -319,7 +394,8 @@ const RegisterPatientDialog: React.FC<RegisterPatientDialogProps> = ({
                   street: formData.direccion,
                   apartment: formData.direccion,
                   country: "DO",
-                }
+                },
+                insurances: insurancesData, // Añadir datos de seguros
               },
               patientBranchOfficeId: localStorage.getItem(
                 "selectedBranchOffice"
@@ -598,51 +674,66 @@ const RegisterPatientDialog: React.FC<RegisterPatientDialogProps> = ({
             </Box>
           );
         } else {
+          // Para adultos, mostrar el formulario de seguros con datos dinámicos
           return (
             <Box display="flex" flexDirection="column" gap={2}>
-              <FormControl fullWidth disabled={formData.noInsurance}>
-                <InputLabel>ARS</InputLabel>
-                <Select
-                  label="ARS"
-                  name="ars"
-                  value={formData.ars}
-                  onChange={handleChange}
-                >
-                  <MenuItem value="Humano">Humano</MenuItem>
-                  <MenuItem value="Primera">Primera</MenuItem>
-                  <MenuItem value="Senana">Senana</MenuItem>
-                </Select>
-              </FormControl>
-              <FormControl fullWidth disabled={formData.noInsurance}>
-                <InputLabel>Plan</InputLabel>
-                <Select
-                  label="Plan"
-                  name="plan"
-                  value={formData.plan}
-                  onChange={handleChange}
-                >
-                  <MenuItem value="Royal">Royal</MenuItem>
-                  <MenuItem value="Gold">Gold</MenuItem>
-                </Select>
-              </FormControl>
-              <TextField
-                label="Número de Póliza"
-                name="policyNumber"
-                value={formData.policyNumber}
-                onChange={handleChange}
-                fullWidth
-                disabled={formData.noInsurance}
-              />
-              <FormControlLabel
-                control={
-                  <Checkbox
-                    checked={formData.noInsurance}
+              {loadingInsurances ? (
+                <CircularProgress size={24} sx={{ alignSelf: 'center', my: 2 }} />
+              ) : (
+                <>
+                  <FormControl fullWidth disabled={formData.noInsurance}>
+                    <InputLabel>ARS</InputLabel>
+                    <Select
+                      label="ARS"
+                      name="ars"
+                      value={formData.ars}
+                      onChange={handleChange}
+                    >
+                      {insurances.map((insurance) => (
+                        <MenuItem key={insurance.insuranceId} value={insurance.insuranceId.toString()}>
+                          {insurance.insuranceName}
+                        </MenuItem>
+                      ))}
+                    </Select>
+                  </FormControl>
+                  
+                  <FormControl fullWidth disabled={formData.noInsurance || !formData.ars}>
+                    <InputLabel>Plan</InputLabel>
+                    <Select
+                      label="Plan"
+                      name="plan"
+                      value={formData.plan}
+                      onChange={handleChange}
+                    >
+                      {availablePlans.map((plan) => (
+                        <MenuItem key={plan.insurancePlanId} value={plan.insurancePlanId.toString()}>
+                          {plan.insurancePlanName}
+                        </MenuItem>
+                      ))}
+                    </Select>
+                  </FormControl>
+                  
+                  <TextField
+                    label="Número de Póliza"
+                    name="policyNumber"
+                    value={formData.policyNumber}
                     onChange={handleChange}
-                    name="noInsurance"
+                    fullWidth
+                    disabled={formData.noInsurance}
                   />
-                }
-                label="No es asegurado"
-              />
+                  
+                  <FormControlLabel
+                    control={
+                      <Checkbox
+                        checked={formData.noInsurance}
+                        onChange={handleChange}
+                        name="noInsurance"
+                      />
+                    }
+                    label="No es asegurado"
+                  />
+                </>
+              )}
             </Box>
           );
         }
@@ -650,49 +741,63 @@ const RegisterPatientDialog: React.FC<RegisterPatientDialogProps> = ({
         // Este paso solo se muestra si el paciente es menor (se sumó el paso de tutor) y ahora se ingresan los datos del seguro.
         return (
           <Box display="flex" flexDirection="column" gap={2}>
-            <FormControl fullWidth disabled={formData.noInsurance}>
-              <InputLabel>ARS</InputLabel>
-              <Select
-                label="ARS"
-                name="ars"
-                value={formData.ars}
-                onChange={handleChange}
-              >
-                <MenuItem value="Humano">Humano</MenuItem>
-                <MenuItem value="Primera">Primera</MenuItem>
-                <MenuItem value="Senana">Senana</MenuItem>
-              </Select>
-            </FormControl>
-            <FormControl fullWidth disabled={formData.noInsurance}>
-              <InputLabel>Plan</InputLabel>
-              <Select
-                label="Plan"
-                name="plan"
-                value={formData.plan}
-                onChange={handleChange}
-              >
-                <MenuItem value="Royal">Royal</MenuItem>
-                <MenuItem value="Gold">Gold</MenuItem>
-              </Select>
-            </FormControl>
-            <TextField
-              label="Número de Póliza"
-              name="policyNumber"
-              value={formData.policyNumber}
-              onChange={handleChange}
-              fullWidth
-              disabled={formData.noInsurance}
-            />
-            <FormControlLabel
-              control={
-                <Checkbox
-                  checked={formData.noInsurance}
+            {loadingInsurances ? (
+              <CircularProgress size={24} sx={{ alignSelf: 'center', my: 2 }} />
+            ) : (
+              <>
+                <FormControl fullWidth disabled={formData.noInsurance}>
+                  <InputLabel>ARS</InputLabel>
+                  <Select
+                    label="ARS"
+                    name="ars"
+                    value={formData.ars}
+                    onChange={handleChange}
+                  >
+                    {insurances.map((insurance) => (
+                      <MenuItem key={insurance.insuranceId} value={insurance.insuranceId.toString()}>
+                        {insurance.insuranceName}
+                      </MenuItem>
+                    ))}
+                  </Select>
+                </FormControl>
+                
+                <FormControl fullWidth disabled={formData.noInsurance || !formData.ars}>
+                  <InputLabel>Plan</InputLabel>
+                  <Select
+                    label="Plan"
+                    name="plan"
+                    value={formData.plan}
+                    onChange={handleChange}
+                  >
+                    {availablePlans.map((plan) => (
+                      <MenuItem key={plan.insurancePlanId} value={plan.insurancePlanId.toString()}>
+                        {plan.insurancePlanName}
+                      </MenuItem>
+                    ))}
+                  </Select>
+                </FormControl>
+                
+                <TextField
+                  label="Número de Póliza"
+                  name="policyNumber"
+                  value={formData.policyNumber}
                   onChange={handleChange}
-                  name="noInsurance"
+                  fullWidth
+                  disabled={formData.noInsurance}
                 />
-              }
-              label="No es asegurado"
-            />
+                
+                <FormControlLabel
+                  control={
+                    <Checkbox
+                      checked={formData.noInsurance}
+                      onChange={handleChange}
+                      name="noInsurance"
+                    />
+                  }
+                  label="No es asegurado"
+                />
+              </>
+            )}
           </Box>
         );
       default:

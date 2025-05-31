@@ -60,7 +60,7 @@ const AuthLogin = ({ title, subtitle, subtext }: LoginType) => {
         localStorage.setItem('personId', res.user.userPersonId);
         if(res.user.isDoctor) localStorage.setItem('doctorId', res.user.userDoctorId);
         localStorage.setItem("userId", res.user.userId);
-        router.push('/');
+        router.push('/appointments');
       })
       .catch((err) => {
         // console.log(err);

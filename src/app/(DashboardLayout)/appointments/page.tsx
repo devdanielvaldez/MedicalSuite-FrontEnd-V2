@@ -28,9 +28,6 @@ const samplePatients = [
 const AppointmentsManagement = () => {
   const [isRegisterOpen, setIsRegisterOpen] = useState(false);
   const [isTurnsOpen, setIsTurnsOpen] = useState(false);
-  const [turns, setTurns] = useState(samplePatients);
-  const theme = useTheme();
-  const isMobile = useTheme().breakpoints.down('sm');
 
   const handleOpenRegister = () => {
     setIsRegisterOpen(true);
@@ -98,7 +95,7 @@ const AppointmentsManagement = () => {
 
         <RegisterAppointmentModal open={isRegisterOpen} onClose={handleCloseRegister} />
 
-        <ViewTurnsModal open={isTurnsOpen} onClose={handleCloseTurns} turns={turns} setTurns={setTurns} />
+        <ViewTurnsModal open={isTurnsOpen} onClose={handleCloseTurns} branchOfficeId={localStorage.getItem('selectedBranchOffice')!} />
       </Box>
     </PageContainer>
   );

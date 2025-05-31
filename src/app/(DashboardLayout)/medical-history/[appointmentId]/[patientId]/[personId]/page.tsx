@@ -35,12 +35,17 @@ import {
   Badge,
   CardActions,
   Autocomplete,
+  Dialog,
+  DialogActions,
+  DialogContent,
+  DialogTitle,
+  InputAdornment,
 } from "@mui/material";
 import { styled } from "@mui/material/styles";
 import DashboardCard from "@/app/(DashboardLayout)/components/shared/DashboardCard";
 import { httpRequest } from "@/app/utils/http";
 import { formatIdentityCard, formatPhoneNumber } from "@/app/utils/utils";
-import { useParams, useRouter } from "next/navigation";
+import { useParams, useRouter, useSearchParams } from "next/navigation";
 import { jsPDF } from "jspdf"; // Importar jsPDF
 
 // Icons
@@ -310,6 +315,16 @@ export default function PatientMedicalHistory() {
   const [selectedHistoryId, setSelectedHistoryId] = useState<number | null>(
     null
   );
+  const searchParams = useSearchParams();
+  const isConsult = searchParams.get("isConsult") === "true";
+  const turnId = searchParams.get("turnId");
+
+  const [invoiceModalOpen, setInvoiceModalOpen] = useState(false);
+  const [services, setServices] = useState<any[]>([]);
+  const [selectedServices, setSelectedServices] = useState<number[]>([]);
+  const [discount, setDiscount] = useState<string>("");
+  const [invoiceLoading, setInvoiceLoading] = useState(false);
+  const [invoiceError, setInvoiceError] = useState<string | null>(null);
 
   // Obtener el doctorId del localStorage al cargar el componente
   useEffect(() => {
@@ -329,19 +344,21 @@ export default function PatientMedicalHistory() {
         console.log("Fetching data for personId:", personId);
 
         // Fetch templates
-        const templatesResponse: any = await httpRequest({
-          url: "/medical-history-templates/my-templates",
-          method: "GET",
-          requiresAuth: true,
-        });
+        if (isConsult) {
+          const templatesResponse: any = await httpRequest({
+            url: "/medical-history-templates/my-templates",
+            method: "GET",
+            requiresAuth: true,
+          });
 
-        console.log("Templates response:", templatesResponse);
+          console.log("Templates response:", templatesResponse);
 
-        if (templatesResponse) {
-          console.log("Templates data:", templatesResponse);
-          setTemplates(templatesResponse);
-        } else {
-          console.error("No templates data found in response");
+          if (templatesResponse) {
+            console.log("Templates data:", templatesResponse);
+            setTemplates(templatesResponse);
+          } else {
+            console.error("No templates data found in response");
+          }
         }
 
         // Fetch person data
@@ -932,7 +949,7 @@ export default function PatientMedicalHistory() {
     });
 
     // Guardar el PDF
-    doc.output('dataurlnewwindow');
+    doc.output("dataurlnewwindow");
   };
 
   // Render field based on data type
@@ -1111,6 +1128,97 @@ export default function PatientMedicalHistory() {
   const showMedicationsTab = activeTab === medicationsTabIndex;
   const showHistoryTab = activeTab === historyTabIndex;
 
+  const fetchServices = async () => {
+    try {
+      const branchOfficeId = localStorage.getItem("selectedBranchOffice");
+      const response: any = await httpRequest({
+        method: "GET",
+        url: `/doctor-services/branch/${branchOfficeId}`,
+        requiresAuth: true,
+      });
+
+      if (response) {
+        setServices(response);
+      }
+    } catch (error) {
+      console.error("Error fetching services:", error);
+    }
+  };
+
+  const calculateTotals = () => {
+    const subtotal = services
+      .filter((service) => selectedServices.includes(service.id))
+      .reduce(
+        (sum, service) => sum + parseFloat(service.branchMappings[0].price),
+        0
+      );
+
+    const discountValue = parseFloat(discount) || 0;
+    const total = subtotal - discountValue;
+
+    return { subtotal, discount: discountValue, total };
+  };
+
+  const handleCreateInvoice = async () => {
+    const { total } = calculateTotals();
+
+    if (total < 0) {
+      setInvoiceError("El descuento no puede ser mayor al subtotal");
+      return;
+    }
+
+    setInvoiceLoading(true);
+    setInvoiceError(null);
+
+    try {
+      const items = services
+        .filter((service) => selectedServices.includes(service.id))
+        .map((service) => ({
+          serviceId: service.id,
+          quantity: 1,
+        }));
+
+      const branchOfficeId = parseInt(
+        localStorage.getItem("selectedBranchOffice") || "0"
+      );
+      
+
+      const invoiceData = {
+        appointmentId: parseInt(appointmentId),
+        branchOfficeId: branchOfficeId,
+        items,
+        discount: +discount || 0,
+      };
+
+      const invoiceResponse = await httpRequest({
+        method: "POST",
+        url: "/invoices",
+        data: invoiceData,
+        requiresAuth: true,
+      });
+
+      if (invoiceResponse) {
+          await httpRequest({
+            method: "POST",
+            url: `/shift/${branchOfficeId}/pending-payment/${turnId}`,
+            requiresAuth: true,
+          })
+          .then(() => {
+            setInvoiceModalOpen(false);
+            setSelectedServices([]);
+            setDiscount("");
+            router.push(
+              '/appointments'
+            );
+          })
+      }
+    } catch (error: any) {
+      setInvoiceError(error.message || "Error en el proceso de facturación");
+    } finally {
+      setInvoiceLoading(false);
+    }
+  };
+
   // Component rendering
   if (loading) {
     return (
@@ -1131,13 +1239,27 @@ export default function PatientMedicalHistory() {
     <DashboardCard
       title="Historia Clínica"
       action={
-        <Button
-          startIcon={<ArrowBackIcon />}
-          variant="outlined"
-          onClick={() => router.back()}
-        >
-          Volver
-        </Button>
+        <Box display="flex" gap={1}>
+          <Button
+            startIcon={<ArrowBackIcon />}
+            variant="outlined"
+            onClick={() => router.back()}
+          >
+            Volver
+          </Button>
+          {isConsult && (
+            <Button
+              variant="contained"
+              color="primary"
+              onClick={() => {
+                setInvoiceModalOpen(true);
+                fetchServices();
+              }}
+            >
+              Completar Consulta
+            </Button>
+          )}
+        </Box>
       }
     >
       <Box>
@@ -1196,7 +1318,7 @@ export default function PatientMedicalHistory() {
                     Género:
                   </Typography>
                   <Typography variant="body1">
-                    {person.gender == 'M' ? 'Masculino' : 'Femenino'}
+                    {person.gender == "M" ? "Masculino" : "Femenino"}
                   </Typography>
                 </Grid>
 
@@ -1343,295 +1465,303 @@ export default function PatientMedicalHistory() {
 
                       {selectedHistoryId && (
                         <Alert severity="success" sx={{ mt: 2 }}>
-                          Historia clínica seleccionada. Puede crear
-                          indicaciones médicas.
+                          Historia clínica seleccionada.{" "}
+                          {isConsult
+                            ? "Puede crear indicaciones médicas."
+                            : "Puede consultar las indicaciones"}
                         </Alert>
                       )}
                     </CardContent>
                   </Card>
 
                   {/* Formulario para crear una nueva indicación médica */}
-                  <Card variant="outlined" sx={{ mb: 4 }}>
-                    <CardHeader title="Nueva Prescripción" />
-                    <Divider />
-                    <CardContent>
-                      {indicationError && (
-                        <Alert
-                          severity="error"
-                          sx={{ mb: 3 }}
-                          onClose={() => setIndicationError(null)}
-                        >
-                          {indicationError}
-                        </Alert>
-                      )}
-                      {indicationSuccess && (
-                        <Alert severity="success" sx={{ mb: 3 }}>
-                          Indicación médica creada con éxito
-                        </Alert>
-                      )}
+                  {isConsult && (
+                    <Card variant="outlined" sx={{ mb: 4 }}>
+                      <CardHeader title="Nueva Prescripción" />
+                      <Divider />
+                      <CardContent>
+                        {indicationError && (
+                          <Alert
+                            severity="error"
+                            sx={{ mb: 3 }}
+                            onClose={() => setIndicationError(null)}
+                          >
+                            {indicationError}
+                          </Alert>
+                        )}
+                        {indicationSuccess && (
+                          <Alert severity="success" sx={{ mb: 3 }}>
+                            Indicación médica creada con éxito
+                          </Alert>
+                        )}
 
-                      <Grid container spacing={3}>
-                        {/* Búsqueda de medicamento */}
-                        <Grid item xs={12} md={6}>
-                          <Autocomplete
-                            id="medication-search"
-                            options={filteredMedications}
-                            getOptionLabel={(option) => option.name}
-                            loading={loadingMedications}
-                            value={selectedMedication}
-                            onChange={(_, newValue) => {
-                              setSelectedMedication(newValue);
-                              if (newValue) {
+                        <Grid container spacing={3}>
+                          {/* Búsqueda de medicamento */}
+                          <Grid item xs={12} md={6}>
+                            <Autocomplete
+                              id="medication-search"
+                              options={filteredMedications}
+                              getOptionLabel={(option) => option.name}
+                              loading={loadingMedications}
+                              value={selectedMedication}
+                              onChange={(_, newValue) => {
+                                setSelectedMedication(newValue);
+                                if (newValue) {
+                                  setIndicationFormValues({
+                                    ...indicationFormValues,
+                                    medicationId: newValue.id,
+                                    medicationName: "",
+                                  });
+                                }
+                              }}
+                              renderInput={(params) => (
+                                <TextField
+                                  {...params}
+                                  label="Buscar medicamento"
+                                  variant="outlined"
+                                  onChange={(e) => {
+                                    const value = e.target.value;
+                                    setSearchMedication(value);
+                                    searchMedications(value);
+                                  }}
+                                  InputProps={{
+                                    ...params.InputProps,
+                                    endAdornment: (
+                                      <>
+                                        {loadingMedications ? (
+                                          <CircularProgress
+                                            color="inherit"
+                                            size={20}
+                                          />
+                                        ) : null}
+                                        {params.InputProps.endAdornment}
+                                      </>
+                                    ),
+                                  }}
+                                />
+                              )}
+                              noOptionsText="No se encontraron medicamentos"
+                              loadingText="Buscando..."
+                            />
+                          </Grid>
+
+                          {/* Ingresar nombre de medicamento nuevo */}
+                          <Grid item xs={12} md={6}>
+                            <TextField
+                              fullWidth
+                              label="O ingrese nombre del medicamento nuevo"
+                              value={indicationFormValues.medicationName}
+                              onChange={(e) => {
                                 setIndicationFormValues({
                                   ...indicationFormValues,
-                                  medicationId: newValue.id,
-                                  medicationName: "",
+                                  medicationName: e.target.value,
                                 });
-                              }
-                            }}
-                            renderInput={(params) => (
-                              <TextField
-                                {...params}
-                                label="Buscar medicamento"
-                                variant="outlined"
-                                onChange={(e) => {
-                                  const value = e.target.value;
-                                  setSearchMedication(value);
-                                  searchMedications(value);
-                                }}
-                                InputProps={{
-                                  ...params.InputProps,
-                                  endAdornment: (
-                                    <>
-                                      {loadingMedications ? (
-                                        <CircularProgress
-                                          color="inherit"
-                                          size={20}
-                                        />
-                                      ) : null}
-                                      {params.InputProps.endAdornment}
-                                    </>
-                                  ),
-                                }}
-                              />
-                            )}
-                            noOptionsText="No se encontraron medicamentos"
-                            loadingText="Buscando..."
-                          />
-                        </Grid>
+                                setSelectedMedication(null);
+                              }}
+                              disabled={!!selectedMedication}
+                              helperText="Si el medicamento no existe, se creará automáticamente"
+                            />
+                          </Grid>
 
-                        {/* Ingresar nombre de medicamento nuevo */}
-                        <Grid item xs={12} md={6}>
-                          <TextField
-                            fullWidth
-                            label="O ingrese nombre del medicamento nuevo"
-                            value={indicationFormValues.medicationName}
-                            onChange={(e) => {
-                              setIndicationFormValues({
-                                ...indicationFormValues,
-                                medicationName: e.target.value,
-                              });
-                              setSelectedMedication(null);
-                            }}
-                            disabled={!!selectedMedication}
-                            helperText="Si el medicamento no existe, se creará automáticamente"
-                          />
-                        </Grid>
-
-                        {/* Dosis */}
-                        <Grid item xs={6} md={3}>
-                          <TextField
-                            fullWidth
-                            label="Dosis"
-                            type="number"
-                            value={indicationFormValues.dosageAmount}
-                            onChange={(e) =>
-                              setIndicationFormValues({
-                                ...indicationFormValues,
-                                dosageAmount: e.target.value,
-                              })
-                            }
-                            required
-                          />
-                        </Grid>
-
-                        {/* Unidad de dosis */}
-                        <Grid item xs={6} md={3}>
-                          <FormControl fullWidth>
-                            <InputLabel>Unidad</InputLabel>
-                            <Select
-                              value={indicationFormValues.dosageUnit}
+                          {/* Dosis */}
+                          <Grid item xs={6} md={3}>
+                            <TextField
+                              fullWidth
+                              label="Dosis"
+                              type="number"
+                              value={indicationFormValues.dosageAmount}
                               onChange={(e) =>
                                 setIndicationFormValues({
                                   ...indicationFormValues,
-                                  dosageUnit: e.target.value,
+                                  dosageAmount: e.target.value,
                                 })
                               }
-                              label="Unidad"
-                            >
-                              <MenuItem value="mg">mg</MenuItem>
-                              <MenuItem value="g">g</MenuItem>
-                              <MenuItem value="ml">ml</MenuItem>
-                              <MenuItem value="gotas">gotas</MenuItem>
-                              <MenuItem value="tabletas">tabletas</MenuItem>
-                              <MenuItem value="cápsulas">cápsulas</MenuItem>
-                              <MenuItem value="amp">ampolla</MenuItem>
-                            </Select>
-                          </FormControl>
-                        </Grid>
+                              required
+                            />
+                          </Grid>
 
-                        {/* Vía de administración */}
-                        <Grid item xs={12} md={6}>
-                          <FormControl fullWidth>
-                            <InputLabel>Vía de administración</InputLabel>
-                            <Select
-                              value={indicationFormValues.administrationRoute}
+                          {/* Unidad de dosis */}
+                          <Grid item xs={6} md={3}>
+                            <FormControl fullWidth>
+                              <InputLabel>Unidad</InputLabel>
+                              <Select
+                                value={indicationFormValues.dosageUnit}
+                                onChange={(e) =>
+                                  setIndicationFormValues({
+                                    ...indicationFormValues,
+                                    dosageUnit: e.target.value,
+                                  })
+                                }
+                                label="Unidad"
+                              >
+                                <MenuItem value="mg">mg</MenuItem>
+                                <MenuItem value="g">g</MenuItem>
+                                <MenuItem value="ml">ml</MenuItem>
+                                <MenuItem value="gotas">gotas</MenuItem>
+                                <MenuItem value="tabletas">tabletas</MenuItem>
+                                <MenuItem value="cápsulas">cápsulas</MenuItem>
+                                <MenuItem value="amp">ampolla</MenuItem>
+                              </Select>
+                            </FormControl>
+                          </Grid>
+
+                          {/* Vía de administración */}
+                          <Grid item xs={12} md={6}>
+                            <FormControl fullWidth>
+                              <InputLabel>Vía de administración</InputLabel>
+                              <Select
+                                value={indicationFormValues.administrationRoute}
+                                onChange={(e) =>
+                                  setIndicationFormValues({
+                                    ...indicationFormValues,
+                                    administrationRoute: e.target.value,
+                                  })
+                                }
+                                label="Vía de administración"
+                              >
+                                <MenuItem value="oral">Oral</MenuItem>
+                                <MenuItem value="sublingual">
+                                  Sublingual
+                                </MenuItem>
+                                <MenuItem value="intravenosa">
+                                  Intravenosa
+                                </MenuItem>
+                                <MenuItem value="intramuscular">
+                                  Intramuscular
+                                </MenuItem>
+                                <MenuItem value="subcutánea">
+                                  Subcutánea
+                                </MenuItem>
+                                <MenuItem value="inhalatoria">
+                                  Inhalatoria
+                                </MenuItem>
+                                <MenuItem value="tópica">Tópica</MenuItem>
+                                <MenuItem value="rectal">Rectal</MenuItem>
+                                <MenuItem value="oftálmica">Oftálmica</MenuItem>
+                                <MenuItem value="ótica">Ótica</MenuItem>
+                              </Select>
+                            </FormControl>
+                          </Grid>
+
+                          {/* Frecuencia */}
+                          <Grid item xs={6} md={3}>
+                            <TextField
+                              fullWidth
+                              label="Frecuencia"
+                              type="number"
+                              value={indicationFormValues.frequencyAmount}
                               onChange={(e) =>
                                 setIndicationFormValues({
                                   ...indicationFormValues,
-                                  administrationRoute: e.target.value,
+                                  frequencyAmount: e.target.value,
                                 })
                               }
-                              label="Vía de administración"
-                            >
-                              <MenuItem value="oral">Oral</MenuItem>
-                              <MenuItem value="sublingual">Sublingual</MenuItem>
-                              <MenuItem value="intravenosa">
-                                Intravenosa
-                              </MenuItem>
-                              <MenuItem value="intramuscular">
-                                Intramuscular
-                              </MenuItem>
-                              <MenuItem value="subcutánea">Subcutánea</MenuItem>
-                              <MenuItem value="inhalatoria">
-                                Inhalatoria
-                              </MenuItem>
-                              <MenuItem value="tópica">Tópica</MenuItem>
-                              <MenuItem value="rectal">Rectal</MenuItem>
-                              <MenuItem value="oftálmica">Oftálmica</MenuItem>
-                              <MenuItem value="ótica">Ótica</MenuItem>
-                            </Select>
-                          </FormControl>
-                        </Grid>
+                              required
+                            />
+                          </Grid>
 
-                        {/* Frecuencia */}
-                        <Grid item xs={6} md={3}>
-                          <TextField
-                            fullWidth
-                            label="Frecuencia"
-                            type="number"
-                            value={indicationFormValues.frequencyAmount}
-                            onChange={(e) =>
-                              setIndicationFormValues({
-                                ...indicationFormValues,
-                                frequencyAmount: e.target.value,
-                              })
-                            }
-                            required
-                          />
-                        </Grid>
+                          {/* Unidad de frecuencia */}
+                          <Grid item xs={6} md={3}>
+                            <FormControl fullWidth>
+                              <InputLabel>Unidad</InputLabel>
+                              <Select
+                                value={indicationFormValues.frequencyUnit}
+                                onChange={(e) =>
+                                  setIndicationFormValues({
+                                    ...indicationFormValues,
+                                    frequencyUnit: e.target.value,
+                                  })
+                                }
+                                label="Unidad"
+                              >
+                                <MenuItem value="horas">Horas</MenuItem>
+                                <MenuItem value="días">Días</MenuItem>
+                                <MenuItem value="semanas">Semanas</MenuItem>
+                                <MenuItem value="veces al día">
+                                  Veces al día
+                                </MenuItem>
+                              </Select>
+                            </FormControl>
+                          </Grid>
 
-                        {/* Unidad de frecuencia */}
-                        <Grid item xs={6} md={3}>
-                          <FormControl fullWidth>
-                            <InputLabel>Unidad</InputLabel>
-                            <Select
-                              value={indicationFormValues.frequencyUnit}
+                          {/* Duración */}
+                          <Grid item xs={6} md={3}>
+                            <TextField
+                              fullWidth
+                              label="Duración"
+                              type="number"
+                              value={indicationFormValues.totalDuration}
                               onChange={(e) =>
                                 setIndicationFormValues({
                                   ...indicationFormValues,
-                                  frequencyUnit: e.target.value,
+                                  totalDuration: e.target.value,
                                 })
                               }
-                              label="Unidad"
-                            >
-                              <MenuItem value="horas">Horas</MenuItem>
-                              <MenuItem value="días">Días</MenuItem>
-                              <MenuItem value="semanas">Semanas</MenuItem>
-                              <MenuItem value="veces al día">
-                                Veces al día
-                              </MenuItem>
-                            </Select>
-                          </FormControl>
-                        </Grid>
+                            />
+                          </Grid>
 
-                        {/* Duración */}
-                        <Grid item xs={6} md={3}>
-                          <TextField
-                            fullWidth
-                            label="Duración"
-                            type="number"
-                            value={indicationFormValues.totalDuration}
-                            onChange={(e) =>
-                              setIndicationFormValues({
-                                ...indicationFormValues,
-                                totalDuration: e.target.value,
-                              })
-                            }
-                          />
-                        </Grid>
+                          {/* Unidad de duración */}
+                          <Grid item xs={6} md={3}>
+                            <FormControl fullWidth>
+                              <InputLabel>Unidad</InputLabel>
+                              <Select
+                                value={indicationFormValues.durationUnit}
+                                onChange={(e) =>
+                                  setIndicationFormValues({
+                                    ...indicationFormValues,
+                                    durationUnit: e.target.value,
+                                  })
+                                }
+                                label="Unidad"
+                                disabled={!indicationFormValues.totalDuration}
+                              >
+                                <MenuItem value="días">Días</MenuItem>
+                                <MenuItem value="semanas">Semanas</MenuItem>
+                                <MenuItem value="meses">Meses</MenuItem>
+                              </Select>
+                            </FormControl>
+                          </Grid>
 
-                        {/* Unidad de duración */}
-                        <Grid item xs={6} md={3}>
-                          <FormControl fullWidth>
-                            <InputLabel>Unidad</InputLabel>
-                            <Select
-                              value={indicationFormValues.durationUnit}
+                          {/* Instrucciones especiales */}
+                          <Grid item xs={12}>
+                            <TextField
+                              fullWidth
+                              multiline
+                              rows={3}
+                              label="Instrucciones especiales"
+                              value={indicationFormValues.specialInstructions}
                               onChange={(e) =>
                                 setIndicationFormValues({
                                   ...indicationFormValues,
-                                  durationUnit: e.target.value,
+                                  specialInstructions: e.target.value,
                                 })
                               }
-                              label="Unidad"
-                              disabled={!indicationFormValues.totalDuration}
-                            >
-                              <MenuItem value="días">Días</MenuItem>
-                              <MenuItem value="semanas">Semanas</MenuItem>
-                              <MenuItem value="meses">Meses</MenuItem>
-                            </Select>
-                          </FormControl>
+                            />
+                          </Grid>
                         </Grid>
 
-                        {/* Instrucciones especiales */}
-                        <Grid item xs={12}>
-                          <TextField
-                            fullWidth
-                            multiline
-                            rows={3}
-                            label="Instrucciones especiales"
-                            value={indicationFormValues.specialInstructions}
-                            onChange={(e) =>
-                              setIndicationFormValues({
-                                ...indicationFormValues,
-                                specialInstructions: e.target.value,
-                              })
+                        <Box display="flex" justifyContent="flex-end" mt={3}>
+                          <Button
+                            variant="contained"
+                            color="primary"
+                            startIcon={
+                              savingIndication ? (
+                                <CircularProgress size={20} color="inherit" />
+                              ) : (
+                                <AddIcon />
+                              )
                             }
-                          />
-                        </Grid>
-                      </Grid>
-
-                      <Box display="flex" justifyContent="flex-end" mt={3}>
-                        <Button
-                          variant="contained"
-                          color="primary"
-                          startIcon={
-                            savingIndication ? (
-                              <CircularProgress size={20} color="inherit" />
-                            ) : (
-                              <AddIcon />
-                            )
-                          }
-                          onClick={() => createMedicalIndication()}
-                          disabled={savingIndication}
-                        >
-                          {savingIndication
-                            ? "Guardando..."
-                            : "Agregar Indicación Médica"}
-                        </Button>
-                      </Box>
-                    </CardContent>
-                  </Card>
+                            onClick={() => createMedicalIndication()}
+                            disabled={savingIndication}
+                          >
+                            {savingIndication
+                              ? "Guardando..."
+                              : "Agregar Indicación Médica"}
+                          </Button>
+                        </Box>
+                      </CardContent>
+                    </Card>
+                  )}
 
                   {/* Lista de indicaciones médicas existentes */}
                   <Box>
@@ -1707,18 +1837,22 @@ export default function PatientMedicalHistory() {
                                 )}
                               </CardContent>
                               {indication.status === "active" && (
-                                <CardActions>
-                                  <Button
-                                    size="small"
-                                    color="error"
-                                    onClick={() =>
-                                      discontinueIndication(indication.id)
-                                    }
-                                    startIcon={<CancelIcon />}
-                                  >
-                                    Discontinuar
-                                  </Button>
-                                </CardActions>
+                                <>
+                                  {isConsult && (
+                                    <CardActions>
+                                      <Button
+                                        size="small"
+                                        color="error"
+                                        onClick={() =>
+                                          discontinueIndication(indication.id)
+                                        }
+                                        startIcon={<CancelIcon />}
+                                      >
+                                        Discontinuar
+                                      </Button>
+                                    </CardActions>
+                                  )}
+                                </>
                               )}
                             </Card>
                           </Grid>
@@ -1731,19 +1865,19 @@ export default function PatientMedicalHistory() {
                       </Alert>
                     )}
 
-                    {medicalIndications.length > 0 ? (
-                                            <Box display="flex" justifyContent="flex-end" mt={3}>
-                                            <Button
-                                              variant="contained"
-                                              color="primary"
-                                              onClick={generatePDF}
-                                              disabled={medicalIndications.length === 0}
-                                            >
-                                              Generar PDF de Indicaciones
-                                            </Button>
-                                          </Box>
+                    {medicalIndications.length > 0 && isConsult ? (
+                      <Box display="flex" justifyContent="flex-end" mt={3}>
+                        <Button
+                          variant="contained"
+                          color="primary"
+                          onClick={generatePDF}
+                          disabled={medicalIndications.length === 0}
+                        >
+                          Generar PDF de Indicaciones
+                        </Button>
+                      </Box>
                     ) : (
-                        <></>
+                      <></>
                     )}
                   </Box>
                 </>
@@ -1863,6 +1997,7 @@ export default function PatientMedicalHistory() {
                       )}
                     </Typography>
                   </Box>
+
                   <Button
                     type="submit"
                     variant="contained"
@@ -1878,6 +2013,143 @@ export default function PatientMedicalHistory() {
             </Box>
           )}
         </form>
+
+        <Dialog
+          open={invoiceModalOpen}
+          onClose={() => setInvoiceModalOpen(false)}
+          fullWidth
+          maxWidth="md"
+        >
+          <DialogTitle>Seleccionar Servicios y Crear Factura</DialogTitle>
+          <DialogContent>
+            {invoiceError && (
+              <Alert severity="error" sx={{ mb: 2 }}>
+                {invoiceError}
+              </Alert>
+            )}
+
+            <Box sx={{ maxHeight: 400, overflow: "auto", mb: 3 }}>
+              {services.map((service) => (
+                <Card key={service.id} sx={{ mb: 1 }}>
+                  <CardContent>
+                    <FormControlLabel
+                      control={
+                        <Checkbox
+                          checked={selectedServices.includes(service.id)}
+                          onChange={(e) => {
+                            if (e.target.checked) {
+                              setSelectedServices([
+                                ...selectedServices,
+                                service.id,
+                              ]);
+                            } else {
+                              setSelectedServices(
+                                selectedServices.filter(
+                                  (id) => id !== service.id
+                                )
+                              );
+                            }
+                          }}
+                        />
+                      }
+                      label={
+                        <Box
+                          sx={{
+                            display: "flex",
+                            flexDirection: "column",
+                            alignItems: "flex-start",
+                            width: "100%",
+                            "& > *:not(:last-child)": {
+                              mb: 2,
+                            },
+                          }}
+                        >
+                          <Typography>{service.name} </Typography>
+                          <Typography>
+                            DOP
+                            {parseFloat(
+                              service.branchMappings[0].price
+                            ).toFixed(2)}
+                          </Typography>
+                        </Box>
+                      }
+                    />
+                  </CardContent>
+                </Card>
+              ))}
+            </Box>
+
+            <Grid container spacing={2}>
+              <Grid item xs={12} md={6}>
+                <TextField
+                  fullWidth
+                  label="Descuento"
+                  type="number"
+                  value={discount}
+                  onChange={(e) => setDiscount(e.target.value)}
+                  InputProps={{
+                    startAdornment: (
+                      <InputAdornment position="start">DOP</InputAdornment>
+                    ),
+                  }}
+                />
+              </Grid>
+
+              <Grid item xs={12} md={6}>
+                <Card variant="outlined">
+                  <CardContent>
+                    <Typography variant="h6">Resumen</Typography>
+                    <Box
+                      sx={{
+                        display: "flex",
+                        justifyContent: "space-between",
+                        mt: 1,
+                      }}
+                    >
+                      <Typography>Subtotal:</Typography>
+                      <Typography>
+                        DOP {calculateTotals().subtotal.toFixed(2)}
+                      </Typography>
+                    </Box>
+                    <Box
+                      sx={{ display: "flex", justifyContent: "space-between" }}
+                    >
+                      <Typography>Descuento:</Typography>
+                      <Typography color="error">
+                        -DOP {calculateTotals().discount.toFixed(2)}
+                      </Typography>
+                    </Box>
+                    <Divider sx={{ my: 1 }} />
+                    <Box
+                      sx={{ display: "flex", justifyContent: "space-between" }}
+                    >
+                      <Typography variant="subtitle1">Total:</Typography>
+                      <Typography variant="subtitle1">
+                        DOP {calculateTotals().total.toFixed(2)}
+                      </Typography>
+                    </Box>
+                  </CardContent>
+                </Card>
+              </Grid>
+            </Grid>
+          </DialogContent>
+
+          <DialogActions>
+            <Button onClick={() => setInvoiceModalOpen(false)}>Cancelar</Button>
+            <Button
+              variant="contained"
+              color="primary"
+              onClick={handleCreateInvoice}
+              disabled={invoiceLoading || selectedServices.length === 0}
+            >
+              {invoiceLoading ? (
+                <CircularProgress size={24} />
+              ) : (
+                "Crear Factura"
+              )}
+            </Button>
+          </DialogActions>
+        </Dialog>
       </Box>
     </DashboardCard>
   );

@@ -21,23 +21,25 @@ import {
   IconBuilding,
   IconUsersGroup,
   IconSettings,
-  IconTemplate
+  IconTemplate,
+  IconShare,
+  IconPdf
 } from "@tabler/icons-react";
 
 import { uniqueId } from "lodash";
 
 const Menuitems = [
-  {
-    navlabel: true,
-    subheader: "Inicio",
-  },
+  // {
+  //   navlabel: true,
+  //   subheader: "Inicio",
+  // },
 
-  {
-    id: uniqueId(),
-    title: "Dashboard",
-    icon: IconLayoutDashboard,
-    href: "/",
-  },
+  // {
+  //   id: uniqueId(),
+  //   title: "Dashboard",
+  //   icon: IconLayoutDashboard,
+  //   href: "/",
+  // },
   {
     navlabel: true,
     subheader: "Pacientes",
@@ -55,12 +57,21 @@ const Menuitems = [
     href: "/patients",
   },
   {
-    id: uniqueId(),
-    title: "Resultados",
-    icon: IconFileAnalytics,
-    href: "/patients-results",
+    navlabel: true,
+    subheader: "Actividades",
   },
-
+  {
+    id: uniqueId(),
+    title: "Referimientos",
+    icon: IconShare,
+    href: "/referrals",
+  },
+  {
+    id: uniqueId(),
+    title: "Licencias/Certificados",
+    icon: IconPdf,
+    href: "/license-certificates",
+  },
   {
     navlabel: true,
     subheader: "Consultorio",
@@ -104,14 +115,14 @@ const Menuitems = [
     id: uniqueId(),
     title: "Autorizaciones",
     icon: IconCheck,
-    href: "/ars-authorizations",
+    href: "/authorizations",
   },
-  {
-    id: uniqueId(),
-    title: "Seguimiento de Pagos",
-    icon: IconCashBanknote,
-    href: "/ars-payments",
-  },
+  // {
+  //   id: uniqueId(),
+  //   title: "Seguimiento de Pagos",
+  //   icon: IconCashBanknote,
+  //   href: "/ars-payments",
+  // },
 
   {
     navlabel: true,
@@ -119,15 +130,15 @@ const Menuitems = [
   },
   {
     id: uniqueId(),
-    title: "Ingresos",
+    title: "Facturas",
     icon: IconCurrencyDollar,
-    href: "/incomes",
+    href: "/invoces",
   },
   {
     id: uniqueId(),
-    title: "Gastos",
-    icon: IconArrowDown,
-    href: "/bills",
+    title: "Ingresos & Gastos",
+    icon: IconCurrencyDollar,
+    href: "/accounting",
   },
 
   {
@@ -136,22 +147,22 @@ const Menuitems = [
   },
   {
     id: uniqueId(),
+    title: "Configuraciones",
+    icon: IconSettings,
+    href: "/settings",
+  },
+  {
+    id: uniqueId(),
     title: "Plantillas",
     icon: IconTemplate,
     href: "/templates",
   },
-  {
-    id: uniqueId(),
-    title: "Usuarios",
-    icon: IconUsersGroup,
-    href: "/users",
-  },
-  {
-    id: uniqueId(),
-    title: "Parametros",
-    icon: IconSettings,
-    href: "/params",
-  },
+  // {
+  //   id: uniqueId(),
+  //   title: "Usuarios",
+  //   icon: IconUsersGroup,
+  //   href: "/users",
+  // },
 ];
 
 export default Menuitems;

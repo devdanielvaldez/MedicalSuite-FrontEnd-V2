@@ -41,15 +41,8 @@ import FilterListIcon from "@mui/icons-material/FilterList";
 import DownloadForOfflineIcon from "@mui/icons-material/DownloadForOffline";
 import BorderAllIcon from "@mui/icons-material/BorderAll";
 import PictureAsPdfIcon from "@mui/icons-material/PictureAsPdf";
-import CalendarTodayIcon from "@mui/icons-material/CalendarToday";
 import CloseIcon from "@mui/icons-material/Close";
 import CheckCircleIcon from "@mui/icons-material/CheckCircle";
-
-import { es } from "date-fns/locale";
-import { AdapterDateFns } from "@mui/x-date-pickers/AdapterDateFns";
-import { LocalizationProvider } from "@mui/x-date-pickers/LocalizationProvider";
-import { DatePicker } from "@mui/x-date-pickers/DatePicker";
-import { TimePicker } from "@mui/x-date-pickers/TimePicker";
 
 import { httpRequest } from "@/app/utils/http";
 import { formatIdentityCard, formatPhoneNumber } from "@/app/utils/utils";
@@ -106,7 +99,6 @@ const formatDate = (dateString: string): string => {
 const formatTime = (timeString: string): string => {
   if (!timeString) return "";
 
-  // Convertir el formato "HH:MM:SS" a "HH:MM AM/PM"
   const [hours, minutes] = timeString.split(":");
   const hour = parseInt(hours, 10);
   const ampm = hour >= 12 ? "PM" : "AM";
@@ -118,13 +110,17 @@ const formatTime = (timeString: string): string => {
 const getStatusText = (status: string): { text: string; color: string } => {
   switch (status) {
     case "PE":
-      return { text: "Pendiente", color: "#ffb833" };
+      return { text: "Pendiente", color: "#33ADFFFF" };
+      case "PP":
+        return { text: "Pendiente de Pago", color: "#E69909FF" };
     case "CO":
-      return { text: "Confirmada", color: "#33ff7d" };
+      return { text: "Confirmada", color: "#029237FF" };
     case "CA":
       return { text: "Cancelada", color: "#ff5252" };
-    case "RE":
-      return { text: "Reprogramada", color: "#5277ff" };
+    case "IN":
+      return { text: "Iniciada", color: "#5277ff" };
+      case "COM":
+        return { text: "Completada", color: "#028CCDFF" };
     default:
       return { text: "Desconocido", color: "#999999" };
   }
@@ -205,6 +201,49 @@ const DeleteConfirmationModal = ({
           </Button>
         </Box>
       </DialogContent>
+    </Dialog>
+  );
+};
+
+// -----------------------------------------------------------------------------
+// Modal para confirmar la cita
+// -----------------------------------------------------------------------------
+const ConfirmAppointmentModal = ({
+  open,
+  onClose,
+  onConfirm,
+}: {
+  open: boolean;
+  onClose: () => void;
+  onConfirm: () => void;
+}) => {
+  return (
+    <Dialog
+      open={open}
+      onClose={onClose}
+      TransitionComponent={Transition}
+      fullWidth
+      maxWidth="xs"
+      PaperProps={{
+        sx: { p: 3, borderRadius: 2, boxShadow: 3 },
+      }}
+    >
+      <DialogTitle sx={{ textAlign: "center", fontWeight: 600 }}>
+        Confirmar Cita
+      </DialogTitle>
+      <DialogContent>
+        <Box sx={{ mt: 1, mb: 2, textAlign: "center" }}>
+          ¿Está seguro de que desea confirmar esta cita?
+        </Box>
+      </DialogContent>
+      <DialogActions>
+        <Button variant="outlined" onClick={onClose}>
+          Cancelar
+        </Button>
+        <Button variant="contained" color="primary" onClick={onConfirm}>
+          Confirmar
+        </Button>
+      </DialogActions>
     </Dialog>
   );
 };
@@ -788,6 +827,9 @@ const ListAppointments = () => {
   const [selectedAppointmentId, setSelectedAppointmentId] = useState<
     number | null
   >(null);
+  const [isConfirmModalOpen, setIsConfirmModalOpen] = useState(false);
+  const [selectedAppointmentForConfirm, setSelectedAppointmentForConfirm] =
+    useState<Appointment | null>(null);
 
   // Estados para autorización de seguros
   const [isAuthorizeModalOpen, setIsAuthorizeModalOpen] = useState(false);
@@ -832,7 +874,6 @@ const ListAppointments = () => {
       });
 
       if (response && response.data) {
-        // Determinar si la respuesta es paginada o un array simple
         const appointmentData = response.data.items || response.data;
         setAppointments(appointmentData);
         console.log("Citas cargadas:", appointmentData);
@@ -898,6 +939,57 @@ const ListAppointments = () => {
     }
   };
 
+  // Handlers para confirmar la cita
+  const handleOpenConfirmModal = (appointment: Appointment) => {
+    setSelectedAppointmentForConfirm(appointment);
+    setIsConfirmModalOpen(true);
+  };
+
+  const handleCloseConfirmModal = () => {
+    setIsConfirmModalOpen(false);
+    setSelectedAppointmentForConfirm(null);
+  };
+
+  const handleConfirmAppointment = async () => {
+    if (!selectedAppointmentForConfirm) return;
+
+    const body = {
+      shiftAppointmentId: selectedAppointmentForConfirm.appointmentId,
+      shiftBranchOfficeId:
+        selectedAppointmentForConfirm.branchOffice?.branchOfficeId || 0,
+      shiftObservation: "Confirmación de cita",
+      shiftPersonId: selectedAppointmentForConfirm.person.personId,
+      shiftDoctorId: selectedAppointmentForConfirm.doctor?.doctorId || 0,
+    };
+
+    try {
+      await httpRequest({
+        url: "/shift",
+        method: "POST",
+        data: body,
+        requiresAuth: true,
+      });
+
+      // Actualizar el estado de la cita si es necesario
+      setAppointments((prev) =>
+        prev.map((appointment) =>
+          appointment.appointmentId ===
+          selectedAppointmentForConfirm.appointmentId
+            ? { ...appointment, statusAppointment: "CO" } // Cambiar el estado a "Confirmada"
+            : appointment
+        )
+      );
+
+      setIsConfirmModalOpen(false);
+      setSelectedAppointmentForConfirm(null);
+      // Mostrar mensaje de éxito
+      setError("Cita confirmada exitosamente.");
+    } catch (err: any) {
+      console.error("Error al confirmar la cita:", err);
+      setError(err.message || "Error al confirmar la cita");
+    }
+  };
+
   // Handlers para autorización de seguro
   const handleAuthorizeInsurance = () => {
     setIsAuthorizeModalOpen(true);
@@ -956,7 +1048,9 @@ const ListAppointments = () => {
   };
 
   const handleHistoryAccess = (appointment: any) => {
-    router.push(`/medical-history/${appointment.appointmentId}/${appointment.person.personId}/${appointment.person.personId}`);
+    router.push(
+      `/medical-history/${appointment.appointmentId}/${appointment.person.personId}/${appointment.person.personId}`
+    );
   };
 
   // Renderizado del componente
@@ -1147,7 +1241,26 @@ const ListAppointments = () => {
                               <HistoryIcon />
                             </IconButton>
                           </Tooltip>
-                          {appointment.isWithInsurance && (
+                          {appointment.statusAppointment == "PE" || appointment.statusAppointment == 'CO' ? (
+                                                        <Tooltip title="Eliminar">
+                                                        <IconButton
+                                                          aria-label="Eliminar"
+                                                          color="error"
+                                                          size="small"
+                                                          onClick={() =>
+                                                            handleOpenDeleteModal(
+                                                              appointment.appointmentId
+                                                            )
+                                                          }
+                                                        >
+                                                          <DeleteIcon />
+                                                        </IconButton>
+                                                      </Tooltip>
+                          ) : (
+                            <></>
+                          )}
+
+                          {/* {appointment.isWithInsurance && appointment.statusAppointment !== 'CA' ? (
                             <Tooltip title="Autorizar Seguro">
                               <IconButton
                                 aria-label="Autorizar Seguro"
@@ -1158,19 +1271,25 @@ const ListAppointments = () => {
                                 <VerifiedUserIcon />
                               </IconButton>
                             </Tooltip>
+                          ) : (
+                            <></>
+                          )} */}
+                          {appointment.statusAppointment == "PE" ? (
+                            <Tooltip title="Confirmar Cita">
+                              <IconButton
+                                aria-label="Confirmar Cita"
+                                color="primary"
+                                size="small"
+                                onClick={() =>
+                                  handleOpenConfirmModal(appointment)
+                                }
+                              >
+                                <VerifiedUserIcon />
+                              </IconButton>
+                            </Tooltip>
+                          ) : (
+                            <></>
                           )}
-                          <Tooltip title="Eliminar">
-                            <IconButton
-                              aria-label="Eliminar"
-                              color="error"
-                              size="small"
-                              onClick={() =>
-                                handleOpenDeleteModal(appointment.appointmentId)
-                              }
-                            >
-                              <DeleteIcon />
-                            </IconButton>
-                          </Tooltip>
                         </TableCell>
                       </TableRow>
                     );
@@ -1194,6 +1313,13 @@ const ListAppointments = () => {
           open={isDeleteModalOpen}
           onClose={handleCloseDeleteModal}
           onConfirm={handleConfirmDelete}
+        />
+
+        {/* Modal de confirmación para confirmar la cita */}
+        <ConfirmAppointmentModal
+          open={isConfirmModalOpen}
+          onClose={handleCloseConfirmModal}
+          onConfirm={handleConfirmAppointment}
         />
 
         {/* Modal para autorizar seguros */}
